@@ -419,6 +419,10 @@ programs and files and load any required libraries.  Raising an error here
 will show up in message log once, and the backend will not be used for
 completion.
 
+`insert': Called before a completion candidate has been inserted into the
+buffer. The second argument is the candidate. It can be used to insert the
+candidata on behalve of company.
+
 `post-completion': Called after a completion candidate has been inserted
 into the buffer.  The second argument is the candidate.  Can be used to
 modify it, e.g. to expand a snippet.
@@ -1084,7 +1088,8 @@ Controlled by `company-auto-complete'.")
   (substring str (length company-prefix)))
 
 (defun company--insert-candidate (candidate)
-  (when (> (length candidate) 0)
+  (when (and (not (company-call-backend 'insert candidate))
+             (> (length candidate) 0))
     (setq candidate (substring-no-properties candidate))
     ;; XXX: Return value we check here is subject to change.
     (if (eq (company-call-backend 'ignore-case) 'keep-prefix)
