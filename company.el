@@ -64,6 +64,7 @@
 (require 'cl-lib)
 (require 'newcomment)
 (require 'pcase)
+(require 'find-func)
 
 ;;; Compatibility
 (eval-and-compile
@@ -1349,6 +1350,68 @@ end of the match."
                  company-occurrence-prefer-closest-above)
           (const :tag "Prefer closest in any direction"
                  company-occurrence-prefer-any-closest)))
+
+(defvar company-vscode-icons-mapping '((array . "symbol-array.png")
+                                       (boolean . "symbol-boolean.png")
+                                       (class . "symbol-class.png")
+                                       (color . "symbol-color.png")
+                                       (constant . "symbol-constant.png")
+                                       (enum-member . "symbol-enumerator-member.png")
+                                       (enum . "symbol-enumerator.png")
+                                       (event . "symbol-event.png")
+                                       (field . "symbol-field.png")
+                                       (interface . "symbol-interface.png")
+                                       (key . "symbol-key.png")
+                                       (keyword . "symbol-keyword.png")
+                                       (method . "symbol-method.png")
+                                       (function . "symbol-method.png")
+                                       (misc . "symbol-misc.png")
+                                       (module . "symbol-namespace.png")
+                                       (numeric . "symbol-numeric.png")
+                                       (operator . "symbol-operator.png")
+                                       (parameter . "symbol-parameter.png")
+                                       (property . "symbol-property.png")
+                                       (ruler . "symbol-ruler.png")
+                                       (snippet . "symbol-snippet.png")
+                                       (string . "symbol-string.png")
+                                       (struct . "symbol-structure.png")
+                                       (variable . "symbol-variable.png")))
+
+(defconst company-package-root
+  (file-name-as-directory
+   (expand-file-name "icons"
+                     (file-name-directory (find-library-name "company")))))
+
+(defun company-make-icon (kind bkg)
+  (when-let (icon-file (alist-get kind company-vscode-icons-mapping))
+    (let ((spec (list 'image :file
+                      (expand-file-name
+                       icon-file
+                       (expand-file-name "vscode-dark/" company-package-root))
+                      :type 'png
+                      :width 15
+                      :height 15
+                      :ascent 'center
+                      :background (unless (eq bkg 'unspecified)
+                                    bkg))))
+      (concat
+       (propertize " " 'display spec)
+       (propertize " " 'display `(space . (:width ,(- 2 (car (image-size spec))))))))))
+
+(defun company-vscode-icons-margin-function (kind selected)
+  (company-make-icon
+   kind
+   (face-attribute
+    (if selected 'company-tooltip-selection 'company-tooltip)
+    :background)))
+
+(defcustom company-format-margin-function
+  #'company-vscode-icons-margin-function
+  "Function to format the margin."
+  :type '(choice
+          (const :tag "VScode icons(dark)"
+                 company-vscode-icons-margin-function)
+          (function :tag "...")))
 
 (defun company-occurrence-prefer-closest-above (pos match-beg match-end)
   "Give priority to the matches above point, then those below point."
@@ -2795,17 +2858,23 @@ If SHOW-VERSION is non-nil, show the version in the echo area."
     (cl-decf window-width (* 2 company-tooltip-margin))
     (when scrollbar-bounds (cl-decf window-width))
 
-    (dotimes (_ len)
+    (dotimes (i len)
       (let* ((value (pop lines-copy))
-             (annotation (company-call-backend 'annotation value)))
+             (annotation (company-call-backend 'annotation value))
+             (candidate-prefix (when company-format-margin-function
+                                 (when-let (kind (company-call-backend 'candidate-kind value))
+                                   (funcall company-format-margin-function
+                                            kind
+                                            (equal selection i))))))
         (setq value (company--clean-string value))
         (when annotation
           (setq annotation (company--clean-string annotation))
           (when company-tooltip-align-annotations
             ;; `lisp-completion-at-point' adds a space.
             (setq annotation (comment-string-strip annotation t nil))))
-        (push (cons value annotation) items)
+        (push (list value annotation candidate-prefix) items)
         (setq width (max (+ (length value)
+                            (length candidate-prefix)
                             (if (and annotation company-tooltip-align-annotations)
                                 (1+ (length annotation))
                               (length annotation)))
@@ -2827,9 +2896,10 @@ If SHOW-VERSION is non-nil, show the version in the echo area."
       (dotimes (i len)
         (let* ((item (pop items))
                (str (car item))
-               (annotation (cdr item))
+               (annotation (cadr item))
+               (candidate-prefix (caddr item))
                (margin (company-space-string company-tooltip-margin))
-               (left margin)
+               (left (or candidate-prefix margin))
                (right margin)
                (width width))
           (when (< numbered 10)
